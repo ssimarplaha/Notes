@@ -1,0 +1,38 @@
+{
+  "name": "notion-notes-skill-package",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "license": "MIT",
+  "scripts": {
+    "render": "node .agents/skills/notion-notes/scripts/render_notion_notes_page.js",
+    "render:ts": "tsx .agents/skills/notion-notes/src/render_notion_notes_page.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .agents/skills/notion-notes/src --ext .ts",
+    "build": "npm run build:dist",
+    "build:dist": "node scripts/build_dist.mjs",
+    "check:dist": "node scripts/check_dist.mjs",
+    "privacy:scan": "node scripts/privacy_scan.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "bootstrap": "sh scripts/bootstrap.sh",
+    "package:skill": "sh scripts/package-skill.sh",
+    "install:codex": "sh scripts/install-codex.sh",
+    "install:claude": "sh scripts/install-claude.sh",
+    "test:unit": "node --import=tsx --test .agents/skills/notion-notes/tests/*.test.mjs",
+    "test:browser": "playwright test .agents/skills/notion-notes/tests/browser",
+    "test": "npm run test:unit && npm run test:browser",
+    "check": "npm run doctor && npm run typecheck && npm run lint && npm test && npm run check:dist && npm run privacy:scan && npm run render -- Notes/2605_25_31/2605_25_31.json Notes && git diff --check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.5.0",
+    "@playwright/test": "^1.45.0",
+    "@types/node": "^20.14.0",
+    "eslint": "^9.5.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

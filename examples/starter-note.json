@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "title": "Starter Note",
+    "outputName": "starter_note",
+    "sourceTitle": "",
+    "sourceUrl": "",
+    "factCheckMode": "starter example without external claims"
+  },
+  "summary": [
+    "This starter file shows the smallest practical shape for a rendered note page."
+  ],
+  "sections": [
+    {
+      "id": "core-idea",
+      "title": "Core Idea",
+      "items": [
+        "Write compact explanations that can stand alone without the original Notion page."
+      ],
+      "examples": [
+        {
+          "title": "Example",
+          "body": "Turn a rough bullet into a checked explanation, then test it with a question."
+        }
+      ],
+      "mistakes": [
+        "Leaving placeholders or uncited factual claims in the final note."
+      ],
+      "citations": []
+    }
+  ],
+  "quickReview": [
+    "Keep private source URLs blank and put public fact-check links in Sources."
+  ],
+  "citations": [],
+  "questions": [
+    {
+      "id": "tf-private-source-url",
+      "testType": "tf",
+      "sectionId": "core-idea",
+      "source": "Core Idea",
+      "question": "Private Notion page URLs should be committed in sample note metadata.",
+      "answer": false
+    }
+  ],
+  "highlights": []
+}
