@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run local gate
+        run: npm run check
+
+      - name: Test Codex install script
+        run: |
+          tmp_home="$(mktemp -d)"
+          HOME="$tmp_home" sh scripts/install-codex.sh
+          test -f "$tmp_home/.codex/skills/notion-notes/SKILL.md"
+
+      - name: Test Claude install script
+        run: |
+          tmp_home="$(mktemp -d)"
+          HOME="$tmp_home" sh scripts/install-claude.sh
+          test -f "$tmp_home/.claude/skills/notion-notes/SKILL.md"
+
+      - name: Package and render from unpacked skill
+        run: |
+          archive="$(sh scripts/package-skill.sh "$(mktemp -d)")"
+          unpacked="$(mktemp -d)"
+          tar -xzf "$archive" -C "$unpacked"
+          node "$unpacked/notion-notes/scripts/render_notion_notes_page.js" examples/starter-note.json "$unpacked/out"
+          test -f "$unpacked/out/starter_note/starter_note.html"

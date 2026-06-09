@@ -1,0 +1,541 @@
+{
+  "metadata": {
+    "title": "Production Python Notes: Packaging, Safety, Observability, and Typing",
+    "sourceTitle": "Sample rough Notion notes",
+    "sourceUrl": "",
+    "factCheckMode": "cited verification",
+    "generatedAt": "2026-06-07",
+    "outputName": "2605_25_31",
+    "htmlFileName": "2605_25_31.html",
+    "jsonFileName": "2605_25_31.json"
+  },
+  "summary": [
+    "The page is mostly about moving Python code from rough scripts toward production-grade packages: clean package layout, `pyproject.toml`, console scripts, quality gates, CI, migrations, observability, deployment safety, and tests.",
+    "`pyproject.toml` is the central modern configuration file for Python packaging and many developer tools. The important tables are `[build-system]`, `[project]`, and `[tool.*]`.",
+    "A production service needs runtime safety before it needs polish: strict config loading, preflight checks, health/doctor commands, structured logging, and clear error classes.",
+    "Database migrations protect deployments by making schema changes explicit, versioned, testable, and reversible where possible.",
+    "Prometheus normally uses a pull model: exporters expose metrics and Prometheus scrapes them. Counters, gauges, histograms, and summaries are different tools for different measurement shapes.",
+    "The rough notes had a few important corrections: `grep` comes from `g/re/p` or global/regular expression/print, not point; `TYPE_CHECKING` is false at runtime; mypy checks statically without running code."
+  ],
+  "sections": [
+    {
+      "id": "python-packaging-quality",
+      "title": "Python Packaging and Quality Gates",
+      "items": [
+        "`pyproject.toml` is a TOML configuration file used by Python packaging tools and also by tools such as linters, formatters, and type checkers.",
+        "`[build-system]` declares the build backend and build-time dependencies needed to build the project. It should be present for modern packages.",
+        "`[project]` holds standardized project metadata for many build backends: name, version, dependencies, scripts, authors, and related metadata.",
+        "`[tool]` is the namespace for tool-specific configuration, for example `[tool.black]`, `[tool.mypy]`, `[tool.ruff]`, or `[tool.hatch]`.",
+        "Console commands should usually be declared in `[project.scripts]` so users can run a command after installing the package.",
+        "`check.sh` should be treated as a quality gate: run formatting checks, linting, type checks, tests, coverage, build checks, and smoke tests before packaging or releasing.",
+        "Generated package metadata such as `.egg-info/` should usually be ignored unless the project intentionally tracks it."
+      ],
+      "examples": [
+        {
+          "title": "Minimal package quality flow",
+          "body": "A useful flow is: format check -> lint -> mypy -> tests -> coverage -> wheel build -> install smoke test. This catches style, static, runtime, and packaging failures before release."
+        },
+        {
+          "title": "Console script intent",
+          "body": "Instead of telling users to run `python src/app/main.py`, expose a command like `my-service` through `[project.scripts]` so the installed package behaves like a real tool."
+        }
+      ],
+      "commands": [
+        {
+          "title": "Count tracked Python lines",
+          "body": "Use this for a quick size baseline. It only counts Python files tracked by Git.",
+          "code": "git ls-files \"*.py\" | xargs wc -l"
+        },
+        {
+          "title": "Editable development install",
+          "body": "Install the package in editable mode with development extras when the project defines them.",
+          "code": "python3 -m pip install -e \".[dev]\""
+        }
+      ],
+      "mistakes": [
+        "Treating `pyproject.toml` as only a packaging file. It often centralizes build, metadata, and tool configuration.",
+        "Running tests but skipping package build/install smoke tests. A project can pass tests and still fail after installation.",
+        "Putting all tool configuration in arbitrary top-level TOML tables. Tool-specific config belongs under `[tool.*]` unless a standard says otherwise."
+      ],
+      "citations": [
+        "src-pyproject"
+      ]
+    },
+    {
+      "id": "runtime-deployment-safety",
+      "title": "Runtime and Deployment Safety",
+      "items": [
+        "Runtime safety means the service can explain its configuration, detect missing dependencies, report health, and fail with clear errors before hurting users.",
+        "A strict config loader should validate required fields, types, defaults, secret references, and invalid combinations at startup.",
+        "A preflight command checks whether the service can start safely: config exists, credentials are reachable, database schema is compatible, ports are free, and dependencies are available.",
+        "A health command should answer whether the service is alive and ready. A doctor command should give deeper diagnostics for operators.",
+        "A daemon is a background process not directly controlled by an interactive user. In production, it is usually supervised by a service manager such as systemd.",
+        "Init is the first process started during OS boot on Unix-like systems. Modern Linux systems often use systemd as the init system and service manager.",
+        "Binding to `127.0.0.1` or `localhost` limits access to the local machine. Binding to `0.0.0.0` listens on all IPv4 interfaces and can expose the service to the network."
+      ],
+      "examples": [
+        {
+          "title": "Address binding choice",
+          "body": "`(\"127.0.0.1\", 8000)` is good for local-only tools. `(\"0.0.0.0\", 8000)` is for services that must accept traffic from other machines and should be protected by firewall, auth, or network policy."
+        },
+        {
+          "title": "Preflight failure",
+          "body": "If the database schema version is too old, preflight should fail before workers start, not after the first request hits a missing column."
+        }
+      ],
+      "mistakes": [
+        "Exposing a dev server on `0.0.0.0` without realizing other machines may reach it.",
+        "Using health checks that only prove the process exists, not that dependencies are ready.",
+        "Hiding config errors until the first real job runs."
+      ],
+      "citations": [
+        "src-systemd-creds"
+      ]
+    },
+    {
+      "id": "database-migrations",
+      "title": "Database Migration Safety",
+      "items": [
+        "A migration script records schema versions and applies controlled upgrade or downgrade steps so code and database structure stay compatible.",
+        "Migrations should run before code that depends on the new schema, or deployment should block until the schema version check passes.",
+        "Schema version checks prevent old code from running against new schema or new code from running against old schema.",
+        "Indexes should be added intentionally because they improve read paths but can slow writes, increase storage, and affect migration time.",
+        "Database integration tests should exercise migration paths, transactions, schema constraints, and rollback behavior where rollback is supported."
+      ],
+      "examples": [
+        {
+          "title": "Migration failure mode",
+          "body": "A developer adds `users.last_login_at` in code but does not migrate production. The service crashes when it writes that field. A schema version check catches this at startup."
+        }
+      ],
+      "mistakes": [
+        "Treating migrations as optional helper scripts instead of release-critical artifacts.",
+        "Adding indexes without measuring the query they are meant to improve.",
+        "Testing only the final schema and never testing the upgrade path."
+      ],
+      "citations": []
+    },
+    {
+      "id": "observability-prometheus",
+      "title": "Observability and Prometheus",
+      "items": [
+        "Observability means the system produces enough evidence to understand behavior without guessing: structured logs, metrics, status, error classes, and retry/dead-letter visibility.",
+        "Structured JSON logs make production logs easier to filter, aggregate, and connect to events.",
+        "Prometheus instrumentation libraries define four core metric types: counter, gauge, histogram, and summary.",
+        "A counter is cumulative and monotonically increasing except when it resets, such as on process restart. Use it for events like requests, completed tasks, and errors.",
+        "A gauge can go up or down. Use it for values like CPU usage, queue depth, memory usage, temperature, or current connection count.",
+        "A histogram samples observations into buckets and also exposes count and sum. Use it for latency and size distributions when bucketed analysis matters.",
+        "Prometheus normally pulls metrics by scraping targets. Exporters expose metrics; Prometheus scrapes, stores time series, and users query with PromQL or visualize in tools such as Grafana."
+      ],
+      "examples": [
+        {
+          "title": "Choosing metric type",
+          "body": "Use a counter for `jobs_completed_total`, a gauge for `queue_depth`, and a histogram for `request_duration_seconds`."
+        },
+        {
+          "title": "Correcting the rough note",
+          "body": "The rough note said metrics are pushed to Prometheus. The normal Prometheus model is pull-based scraping; exporters expose metrics for Prometheus to scrape."
+        }
+      ],
+      "mistakes": [
+        "Using a counter for a value that can decrease.",
+        "Logging every error but not counting errors by class or outcome.",
+        "Recording retries without visibility into dead-letter or final failure states."
+      ],
+      "citations": [
+        "src-prometheus-metrics"
+      ]
+    },
+    {
+      "id": "shell-editor-productivity",
+      "title": "Shell and Editor Productivity",
+      "items": [
+        "`grep` searches input for lines matching a pattern. Its name comes from the Unix editor command `g/re/p`, meaning global/regular expression/print.",
+        "`grep -i` ignores case when matching.",
+        "`grep -v` inverts the match and prints lines that do not match the pattern.",
+        "`grep -r` searches recursively through directories.",
+        "`grep -n` prints line numbers for matching lines.",
+        "Useful VS Code navigation shortcuts from the rough note: F12 for definition, Ctrl+T for symbol search, Ctrl+Shift+O for symbols in the current file, and Ctrl+Shift+F for text search across files."
+      ],
+      "examples": [
+        {
+          "title": "Search for an error case-insensitively",
+          "body": "Find `error`, `ERROR`, and mixed-case variants in a log file.",
+          "code": "grep -i \"error\" server.log"
+        },
+        {
+          "title": "Find a symbol recursively",
+          "body": "Search all files under a project folder for a variable or function name.",
+          "code": "grep -rn \"my_variable\" ./project_folder/"
+        }
+      ],
+      "mistakes": [
+        "Remembering `grep` as global regular expression point. The corrected expansion is print, from `g/re/p`.",
+        "Using recursive search without narrowing the folder, which can create noisy output.",
+        "Forgetting `-n` when you need actionable file locations."
+      ],
+      "citations": [
+        "src-gnu-grep"
+      ]
+    },
+    {
+      "id": "python-runtime-typing",
+      "title": "Python Runtime, Imports, and Typing",
+      "items": [
+        "`TYPE_CHECKING` from `typing` is treated as true by static type checkers but is false at runtime. Use it for imports needed only for type hints, especially expensive imports or imports that would create runtime cycles.",
+        "`from __future__ import annotations` postpones annotation evaluation in supported Python versions, so annotations can behave more like strings instead of immediately resolving names.",
+        "Mypy is a static type checker: it analyzes code for type errors without executing the program.",
+        "A type annotation does not create a value. A line such as `f_lst: dict[str, list[str]]` declares a type but still needs `= {}` before use.",
+        "Python object references live in stack frames or namespaces, while most Python objects live on the heap managed by the runtime.",
+        "`MyHandler()` creates an instance. `MyHandler` passes the class object itself, which is useful when an API expects a handler class rather than an instance.",
+        "`@staticmethod` is useful for helper behavior logically attached to a class but independent of instance state. Use a module-level function when the helper is general-purpose.",
+        "`try` / `except` / `else`: the `else` block runs only if the `try` block completes without raising an exception."
+      ],
+      "examples": [
+        {
+          "title": "Type-only import",
+          "body": "Use `TYPE_CHECKING` when a type is only needed by the checker and importing it at runtime would be expensive or circular.",
+          "code": "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from app.jobs import JobRegistryEntry\n\ndef run(job: \"JobRegistryEntry\") -> None:\n    ..."
+        },
+        {
+          "title": "Annotation plus initialization",
+          "body": "This creates a real dictionary value after declaring its type.",
+          "code": "groups: dict[str, list[str]] = {}"
+        }
+      ],
+      "mistakes": [
+        "Writing `from tying import TYPE_CHECKING`; the module is `typing`.",
+        "Assuming `TYPE_CHECKING` removes dependencies. It only prevents selected imports from running at runtime.",
+        "Calling a function immediately with `_connector.connect()` when the code needs to store the callable `_connector.connect` for later.",
+        "Using `@staticmethod` for a general utility that does not belong to the class domain."
+      ],
+      "citations": [
+        "src-python-typing",
+        "src-python-future",
+        "src-mypy",
+        "src-python-datamodel"
+      ]
+    },
+    {
+      "id": "release-discipline",
+      "title": "Release and Production Discipline",
+      "items": [
+        "Ratcheting means enforcing standards incrementally so the codebase can only move forward or avoid regression.",
+        "Linting scans code for suspicious patterns, style issues, and likely mistakes before runtime.",
+        "Coverage measures how much code is executed by tests. It is useful, but production confidence still depends on testing meaningful behavior and failure paths.",
+        "A principal-level release needs docs, runbook, backup/restore plan, rollback procedure, versioned artifacts, release notes, and performance baselines.",
+        "`PYTHONDONTWRITEBYTECODE=1` prevents Python from writing `.pyc` bytecode cache files. It can keep one-time CI or disposable runs cleaner, but repeated imports may lose some startup-cache benefit.",
+        "`PYTHONUNBUFFERED=1` makes output less buffered so logs appear faster, which is useful in containers and CI."
+      ],
+      "examples": [
+        {
+          "title": "CI command from the rough note",
+          "body": "Run static type checks first, then execute tests under coverage.",
+          "code": "python -m mypy server_block && python -m coverage run -m unittest discover -s server_block/tests"
+        },
+        {
+          "title": "Clean test run",
+          "body": "Run tests without writing bytecode cache files into the project tree.",
+          "code": "PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests"
+        }
+      ],
+      "mistakes": [
+        "Treating high coverage as proof that the important behavior is tested.",
+        "Shipping without a rollback procedure or runbook.",
+        "Using environment variables without documenting what enables or disables the behavior."
+      ],
+      "citations": [
+        "src-mypy",
+        "src-systemd-creds"
+      ]
+    }
+  ],
+  "quickReview": [
+    "`pyproject.toml`: `[build-system]` for build backend/dependencies, `[project]` for package metadata, `[tool.*]` for tool configuration.",
+    "Preflight checks should fail early when config, credentials, schema, or dependencies are not ready.",
+    "Migrations make database schema changes explicit and versioned.",
+    "Prometheus normally pulls metrics from exporters; counters increase, gauges move up/down, histograms bucket observations.",
+    "`grep` comes from `g/re/p`: global/regular expression/print.",
+    "`TYPE_CHECKING` is false at runtime and true for static type checkers.",
+    "Mypy checks statically without running code.",
+    "`MyHandler()` creates an instance; `MyHandler` passes the class."
+  ],
+  "citations": [
+    {
+      "id": "src-pyproject",
+      "label": "Python Packaging User Guide: Writing your pyproject.toml",
+      "url": "https://packaging.python.org/guides/writing-pyproject-toml/",
+      "note": "Verifies `pyproject.toml`, `[build-system]`, `[project]`, `[tool]`, and `[project.scripts]` behavior."
+    },
+    {
+      "id": "src-prometheus-metrics",
+      "label": "Prometheus documentation: Metric types",
+      "url": "https://prometheus.io/docs/concepts/metric_types/",
+      "note": "Verifies counter, gauge, histogram, and summary semantics."
+    },
+    {
+      "id": "src-gnu-grep",
+      "label": "GNU Grep manual",
+      "url": "https://www.gnu.org/s/grep/manual/grep.html",
+      "note": "Verifies `grep` behavior and the `g/re/p` origin."
+    },
+    {
+      "id": "src-python-typing",
+      "label": "Python docs: typing.TYPE_CHECKING",
+      "url": "https://docs.python.org/3/library/typing.html#typing.TYPE_CHECKING",
+      "note": "Verifies that `TYPE_CHECKING` is false at runtime and assumed true by static type checkers."
+    },
+    {
+      "id": "src-python-future",
+      "label": "Python docs: __future__ annotations",
+      "url": "https://docs.python.org/3/library/__future__.html",
+      "note": "Verifies the future annotations feature and postponed/deferred annotation behavior."
+    },
+    {
+      "id": "src-mypy",
+      "label": "Mypy docs: Getting started",
+      "url": "https://mypy.readthedocs.io/en/stable/getting_started.html",
+      "note": "Verifies that mypy checks code statically without running it."
+    },
+    {
+      "id": "src-python-datamodel",
+      "label": "Python docs: Data model descriptors",
+      "url": "https://docs.python.org/3/reference/datamodel.html",
+      "note": "Verifies staticmethod and classmethod descriptor behavior."
+    },
+    {
+      "id": "src-systemd-creds",
+      "label": "systemd credentials documentation",
+      "url": "https://systemd.io/CREDENTIALS/",
+      "note": "Verifies encrypted credential concepts and credential handling context."
+    }
+  ],
+  "questions": [
+    {
+      "id": "tf-pyproject-build-system",
+      "question": "The `[build-system]` table declares the build backend and build-time dependencies needed to build a Python project.",
+      "sectionId": "python-packaging-quality",
+      "source": "Python Packaging and Quality Gates",
+      "testType": "tf",
+      "answer": true
+    },
+    {
+      "id": "tf-type-checking-runtime",
+      "question": "`TYPE_CHECKING` is false at runtime but treated as true by static type checkers.",
+      "sectionId": "python-runtime-typing",
+      "source": "Python Runtime, Imports, and Typing",
+      "testType": "tf",
+      "answer": true
+    },
+    {
+      "id": "tf-counter-decrease",
+      "question": "A Prometheus counter is a good metric type for values that frequently increase and decrease.",
+      "sectionId": "observability-prometheus",
+      "source": "Observability and Prometheus",
+      "testType": "tf",
+      "answer": false
+    },
+    {
+      "id": "tf-grep-point",
+      "question": "`grep` comes from global regular expression point.",
+      "sectionId": "shell-editor-productivity",
+      "source": "Shell and Editor Productivity",
+      "testType": "tf",
+      "answer": false
+    },
+    {
+      "id": "mcq-pyproject-tool",
+      "question": "Where should tool-specific config like mypy or ruff usually live in `pyproject.toml`?",
+      "sectionId": "python-packaging-quality",
+      "source": "Python Packaging and Quality Gates",
+      "testType": "mcq",
+      "options": {
+        "A": "`[project]`",
+        "B": "`[tool.*]`",
+        "C": "`[build-system]`",
+        "D": "`[runtime]`"
+      },
+      "answer": "B"
+    },
+    {
+      "id": "mcq-bind-address",
+      "question": "What does binding a Python server to `0.0.0.0` usually mean?",
+      "sectionId": "runtime-deployment-safety",
+      "source": "Runtime and Deployment Safety",
+      "testType": "mcq",
+      "options": {
+        "A": "Only the current process can access it.",
+        "B": "Only the local machine can access it.",
+        "C": "It listens on all IPv4 interfaces.",
+        "D": "It disables IPv4 networking."
+      },
+      "answer": "C"
+    },
+    {
+      "id": "mcq-handler-class",
+      "question": "If an API expects a handler class, which form should you pass?",
+      "sectionId": "python-runtime-typing",
+      "source": "Python Runtime, Imports, and Typing",
+      "testType": "mcq",
+      "options": {
+        "A": "`MyHandler()` because it always creates the safest value.",
+        "B": "`MyHandler` because it passes the class object itself.",
+        "C": "`MyHandler.__init__()` because it initializes the class.",
+        "D": "`super(MyHandler)` because handlers must be inherited."
+      },
+      "answer": "B"
+    },
+    {
+      "id": "mcq-gauge",
+      "question": "Which metric type should represent a queue depth that can go up or down?",
+      "sectionId": "observability-prometheus",
+      "source": "Observability and Prometheus",
+      "testType": "mcq",
+      "options": {
+        "A": "Counter",
+        "B": "Summary only",
+        "C": "Gauge",
+        "D": "Release note"
+      },
+      "answer": "C"
+    },
+    {
+      "id": "mcq-mypy",
+      "question": "What is the key behavior of mypy?",
+      "sectionId": "python-runtime-typing",
+      "source": "Python Runtime, Imports, and Typing",
+      "testType": "mcq",
+      "options": {
+        "A": "It executes tests and reports runtime failures.",
+        "B": "It statically checks type errors without running the program.",
+        "C": "It formats Python code.",
+        "D": "It migrates database schema."
+      },
+      "answer": "B"
+    },
+    {
+      "id": "mcq-preflight",
+      "question": "What is the main purpose of a preflight command?",
+      "sectionId": "runtime-deployment-safety",
+      "source": "Runtime and Deployment Safety",
+      "testType": "mcq",
+      "options": {
+        "A": "Run after the service is already serving traffic.",
+        "B": "Check readiness conditions before startup or deployment continues.",
+        "C": "Replace database migrations.",
+        "D": "Hide configuration errors from users."
+      },
+      "answer": "B"
+    },
+    {
+      "id": "completion-project-table",
+      "question": "Which `pyproject.toml` table stores standardized package metadata such as name, version, and dependencies?",
+      "sectionId": "python-packaging-quality",
+      "source": "Python Packaging and Quality Gates",
+      "testType": "completion",
+      "answerText": "[project]",
+      "acceptedAnswers": [
+        "[project]",
+        "project"
+      ]
+    },
+    {
+      "id": "completion-grep-ignore-case",
+      "question": "Which `grep` flag ignores case?",
+      "sectionId": "shell-editor-productivity",
+      "source": "Shell and Editor Productivity",
+      "testType": "completion",
+      "answerText": "-i",
+      "acceptedAnswers": [
+        "-i",
+        "i"
+      ]
+    },
+    {
+      "id": "completion-prometheus-counter",
+      "question": "Which Prometheus metric type should count events that only increase except for resets?",
+      "sectionId": "observability-prometheus",
+      "source": "Observability and Prometheus",
+      "testType": "completion",
+      "answerText": "counter",
+      "acceptedAnswers": [
+        "counter",
+        "Counter"
+      ]
+    },
+    {
+      "id": "completion-type-checking",
+      "question": "Which constant lets imports run for type checkers but not at runtime?",
+      "sectionId": "python-runtime-typing",
+      "source": "Python Runtime, Imports, and Typing",
+      "testType": "completion",
+      "answerText": "TYPE_CHECKING",
+      "acceptedAnswers": [
+        "TYPE_CHECKING",
+        "typing.TYPE_CHECKING"
+      ]
+    },
+    {
+      "id": "written-migration-purpose",
+      "question": "Explain why a migration script matters during package or service updates.",
+      "sectionId": "database-migrations",
+      "source": "Database Migration Safety",
+      "testType": "written",
+      "modelAnswerText": "A migration script makes schema changes explicit and versioned. It upgrades or downgrades the database so the running code and database structure remain compatible. It should run before code that depends on the new schema or block startup through a schema version check.",
+      "keywords": [
+        "schema",
+        "version",
+        "compatible",
+        "upgrade",
+        "startup"
+      ]
+    },
+    {
+      "id": "written-prometheus-flow",
+      "question": "Describe the normal Prometheus metrics flow from application to dashboard.",
+      "sectionId": "observability-prometheus",
+      "source": "Observability and Prometheus",
+      "testType": "written",
+      "modelAnswerText": "The application or exporter exposes metrics. Prometheus scrapes the target on a schedule, stores the samples as time series, users query the data with PromQL, and dashboards such as Grafana visualize the results.",
+      "keywords": [
+        "exporter",
+        "scrapes",
+        "time series",
+        "PromQL",
+        "dashboard"
+      ]
+    },
+    {
+      "id": "written-type-only-import",
+      "question": "When would you use `if TYPE_CHECKING:` around an import?",
+      "sectionId": "python-runtime-typing",
+      "source": "Python Runtime, Imports, and Typing",
+      "testType": "written",
+      "modelAnswerText": "Use it when the imported object is only needed for type hints and importing it at runtime would be expensive, optional, or would create a circular import. Static type checkers still see the import, but runtime code avoids it.",
+      "keywords": [
+        "type hints",
+        "runtime",
+        "circular",
+        "expensive",
+        "static"
+      ]
+    },
+    {
+      "id": "written-quality-gate",
+      "question": "Design a compact `check.sh` quality gate for this kind of Python service.",
+      "sectionId": "release-discipline",
+      "source": "Release and Production Discipline",
+      "testType": "written",
+      "modelAnswerText": "A good quality gate runs format check, linting, mypy, tests, coverage, package build, install smoke test, and optionally dependency audit and compile checks. It should fail fast and be used before release or CI merge.",
+      "keywords": [
+        "format",
+        "lint",
+        "mypy",
+        "tests",
+        "coverage",
+        "build"
+      ]
+    }
+  ],
+  "highlights": []
+}

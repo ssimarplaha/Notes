@@ -1,0 +1,4 @@
+interface:
+  display_name: "Notion Notes"
+  short_description: "Organize Notion notes into tested HTML"
+  default_prompt: "Use $notion-notes to turn this Notion page into compact, fact-checked HTML study notes with an interactive test."
