@@ -4,7 +4,7 @@
 /**
  * Generated JavaScript runtime for the notion-notes renderer.
  * TypeScript source remains canonical in ../src.
- * Source fingerprint: 7358c8e0d75c85382785f611fe7aed2598a805355eabbda26bc7f1a7581ed79c
+ * Source fingerprint: 3392ab833d7f7de97ec325300881b48a24980174bf5f1402bce3c24e19f77409
  */
 
 const fs = require("node:fs");
@@ -33,8 +33,7 @@ const HTML_ENTITIES = {
   "\"": "&quot;",
   "'": "&#39;"
 };
-const skillRoot = path.resolve(__dirname, "..");
-const defaultTemplatePath = path.join(skillRoot, "assets", "html-template", "template.html");
+const TEMPLATE_RELATIVE_PATH = path.join("assets", "html-template", "template.html");
 
 class UsageError extends Error {
   constructor(message) {
@@ -147,7 +146,7 @@ function renderPage(inputPath, outputTarget, options = {}) {
     generatedAt: options.generatedAt
   });
   const data = validateData(normalizedUnknown);
-  const template = readUtf8(options.templatePath || defaultTemplatePath);
+  const template = readUtf8(options.templatePath || resolveDefaultTemplatePath());
   validateTemplate(template);
   const html = renderTemplate(template, data);
 
@@ -168,6 +167,36 @@ function renderPage(inputPath, outputTarget, options = {}) {
     highlights: data.highlights.length,
     jsonFileName: data.metadata.jsonFileName
   };
+}
+
+function resolveDefaultTemplatePath() {
+  const candidates = defaultTemplatePathCandidates();
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0] || path.join("assets", "html-template", "template.html");
+}
+
+function defaultTemplatePathCandidates() {
+  const candidates = [];
+
+  if (typeof __filename === "string") {
+    candidates.push(path.join(path.resolve(path.dirname(__filename), ".."), TEMPLATE_RELATIVE_PATH));
+  }
+
+  if (typeof __dirname === "string") {
+    candidates.push(path.join(path.resolve(__dirname, ".."), TEMPLATE_RELATIVE_PATH));
+  }
+
+  if (process.argv[1]) {
+    candidates.push(path.join(path.resolve(path.dirname(process.argv[1]), ".."), TEMPLATE_RELATIVE_PATH));
+  }
+
+  candidates.push(path.join(process.cwd(), ".agents", "skills", "notion-notes", TEMPLATE_RELATIVE_PATH));
+
+  return [...new Set(candidates)];
 }
 
 function readUtf8(filePath) {

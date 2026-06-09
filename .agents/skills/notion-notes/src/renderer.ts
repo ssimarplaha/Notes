@@ -15,6 +15,7 @@
  * 6. Atomically write HTML and optional sibling JSON.
  */
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 import {atomicWriteUtf8, ensureDirectory, readJsonUnknown, readUtf8} from "./fs_io";
@@ -24,8 +25,7 @@ import type {RenderOptions, RenderResult} from "./schema";
 import {renderTemplate, validateTemplate} from "./template";
 import {validateData} from "./validate";
 
-const skillRoot = path.resolve(__dirname, "..");
-const defaultTemplatePath = path.join(skillRoot, "assets", "html-template", "template.html");
+const TEMPLATE_RELATIVE_PATH = path.join("assets", "html-template", "template.html");
 
 /** Renders a notes JSON file into HTML and optional normalized sibling JSON. */
 export function renderPage(
@@ -41,7 +41,7 @@ export function renderPage(
     {outputPath: renderPlan.outputPath, generatedAt: options.generatedAt};
   const normalizedUnknown = normalizeInput(sourceData, normalizeOptions);
   const data = validateData(normalizedUnknown);
-  const template = readUtf8(options.templatePath || defaultTemplatePath);
+  const template = readUtf8(options.templatePath || resolveDefaultTemplatePath());
   validateTemplate(template);
   const html = renderTemplate(template, data);
 
@@ -66,3 +66,33 @@ export function renderPage(
 
 /** Backward-compatible programmatic alias for older callers. */
 export const build = renderPage;
+
+function resolveDefaultTemplatePath(): string {
+  const candidates = defaultTemplatePathCandidates();
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0] || path.join("assets", "html-template", "template.html");
+}
+
+function defaultTemplatePathCandidates(): string[] {
+  const candidates: string[] = [];
+
+  if (typeof __filename === "string") {
+    candidates.push(path.join(path.resolve(path.dirname(__filename), ".."), TEMPLATE_RELATIVE_PATH));
+  }
+
+  if (typeof __dirname === "string") {
+    candidates.push(path.join(path.resolve(__dirname, ".."), TEMPLATE_RELATIVE_PATH));
+  }
+
+  if (process.argv[1]) {
+    candidates.push(path.join(path.resolve(path.dirname(process.argv[1]), ".."), TEMPLATE_RELATIVE_PATH));
+  }
+
+  candidates.push(path.join(process.cwd(), ".agents", "skills", "notion-notes", TEMPLATE_RELATIVE_PATH));
+
+  return [...new Set(candidates)];
+}
